@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 2s # Scrape every 2 seconds for high-frequency dashboard telemetry
+  evaluation_interval: 2s
+
+scrape_configs:
+  - job_name: "defect-detection-service"
+    static_configs:
+      - targets: ["web:8000"] # Matches the service name in docker-compose.yml
