@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: defect-detection-web
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - KMP_DUPLICATE_LIB_OK=TRUE
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: defect-detection-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    depends_on:
+      - web
