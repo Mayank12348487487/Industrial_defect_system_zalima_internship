@@ -31,6 +31,8 @@ METRIC_DEFECTS = Counter(f"{PROMETHEUS_PREFIX}defects_detected_total", "Total nu
 METRIC_LATENCY = Summary(f"{PROMETHEUS_PREFIX}inference_latency_seconds", "Inference latency in seconds")
 METRIC_FPS = Gauge(f"{PROMETHEUS_PREFIX}inference_fps", "Current inference frames per second")
 METRIC_CAMERA_UPTIME = Gauge(f"{PROMETHEUS_PREFIX}camera_uptime_seconds", "Uptime of the camera stream in seconds")
+METRIC_CAMERA_ONLINE = Gauge(f"{PROMETHEUS_PREFIX}camera_online", "Operational status of the camera stream (1 for online, 0 for offline)")
+METRIC_ACTIVE_WS = Gauge(f"{PROMETHEUS_PREFIX}active_websocket_connections", "Number of active client WebSocket connections")
 
 # Global System State
 class SystemState:
@@ -134,11 +136,13 @@ def stream_processing_thread():
             frame = processor.get_frame()
             if frame is None:
                 state.camera_online = False
+                METRIC_CAMERA_ONLINE.set(0.0)
                 METRIC_CAMERA_UPTIME.set(0.0)
                 time.sleep(0.5)
                 continue
                 
             state.camera_online = True
+            METRIC_CAMERA_ONLINE.set(1.0)
             uptime = time.time() - state.start_time
             METRIC_CAMERA_UPTIME.set(uptime)
             
@@ -326,6 +330,7 @@ def get_video_feed():
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     state.active_websockets.append(websocket)
+    METRIC_ACTIVE_WS.set(len(state.active_websockets))
     print(f"WebSocket client connected. Total clients: {len(state.active_websockets)}")
     
     try:
@@ -338,11 +343,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         state.active_websockets.remove(websocket)
+        METRIC_ACTIVE_WS.set(len(state.active_websockets))
         print(f"WebSocket client disconnected. Total clients: {len(state.active_websockets)}")
     except Exception as e:
         print(f"WebSocket error: {e}")
         if websocket in state.active_websockets:
             state.active_websockets.remove(websocket)
+            METRIC_ACTIVE_WS.set(len(state.active_websockets))
 
 # HTML templates
 templates_dir = Path("app/templates")
