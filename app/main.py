@@ -212,6 +212,21 @@ def get_metrics():
     Exposes metrics for Prometheus scraping.
     """
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+@app.get("/api/health")
+def health_check():
+    """
+    Lightweight health check for the FastAPI service and detection pipeline.
+    """
+    detector_ready = detector is not None
+    camera_ready = state.camera_online
+
+    return {
+        "status": "healthy" if detector_ready and camera_ready else "degraded",
+        "service": "Industrial Defect Detection Service",
+        "version": "1.0.0",
+        "detector": "ready" if detector_ready else "unavailable",
+        "camera": "online" if camera_ready else "offline"
+    }
 
 @app.get("/api/status")
 def get_status():
