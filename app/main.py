@@ -8,7 +8,7 @@ import asyncio
 from typing import List, Dict, Any
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File, Form
-from fastapi.responses import StreamingResponse, HTMLResponse
+from starlette.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
