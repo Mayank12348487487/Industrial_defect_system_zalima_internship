@@ -1,4 +1,5 @@
-path: d:/Industrial-defect-system/data
+path: .
+
 train: images/train
 val: images/val
 
