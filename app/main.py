@@ -7,7 +7,7 @@ import threading
 import asyncio
 from typing import List, Dict, Any
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response, UploadFile, File, Form, HTTPException
 from starlette.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -276,31 +276,70 @@ def set_source(source: str = Form(...)):
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     """
-    Uploads a file (video or image) and sets it as the active stream source.
+    Uploads an image or video and sets it as the active stream source.
+    Validates the filename and file type before saving.
     """
-    if not file:
-        return {"status": "ERROR", "message": "No file uploaded."}
-        
-    file_path = UPLOAD_DIR / file.filename
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="No file selected for upload."
+        )
+
+    allowed_extensions = {
+        ".jpg", ".jpeg", ".png",
+        ".mp4", ".avi", ".mov", ".mkv", ".webm"
+    }
+
+    original_filename = Path(file.filename).name
+    file_extension = Path(original_filename).suffix.lower()
+
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported file type '{file_extension}'. "
+                "Allowed types: JPG, JPEG, PNG, MP4, AVI, MOV, MKV, WEBM."
+            )
+        )
+
+    file_path = UPLOAD_DIR / original_filename
+
     try:
+        content = await file.read()
+
+        if not content:
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded file is empty."
+            )
+
         with open(file_path, "wb") as buffer:
-            content = await file.read()
             buffer.write(content)
-            
+
         with state.lock:
             state.source_path = str(file_path)
             state.source_changed = True
-            
+
         print(f"File uploaded and set as source: {file_path}")
-        
+
         broadcast_ws_message({
             "type": "source_changed",
             "payload": {"source_path": str(state.source_path)}
         })
-        
-        return {"status": "SUCCESS", "filename": file.filename, "source": str(file_path)}
-    except Exception as e:
-        return {"status": "ERROR", "message": str(e)}
+
+        return {
+            "status": "SUCCESS",
+            "filename": original_filename,
+            "source": str(file_path)
+        }
+
+    except HTTPException:
+        raise
+    except OSError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save uploaded file: {str(e)}"
+        )
 
 def video_feed_generator():
     """
