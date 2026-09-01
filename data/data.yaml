@@ -1,7 +1,7 @@
-path: .
-
+path: C:/Users/mangesh/Downloads/Industrial_defect_system_zalima_internship/data
 train: images/train
 val: images/val
+test: images/test
 
 names:
   0: crazing

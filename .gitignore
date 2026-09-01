@@ -1,22 +1,9 @@
-# Python temporary files
+data/images/
+data/labels/
+data/*.cache
+runs/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.pytest_cache/
 .venv/
 venv/
-ENV/
-env/
-
-# Output streams and runs
-runs/
-data/output_stream/
-data/uploads/*
-!data/uploads/.gitkeep
-
-# OS and IDE files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+.env
