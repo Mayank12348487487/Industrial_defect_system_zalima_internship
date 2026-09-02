@@ -1,41 +1,55 @@
 import os
 import time
-import cv2
 from pathlib import Path
-from onnx_inference import ONNXDetector
+from typing import Any, Dict, List, Optional, Union
+
+import cv2
+import numpy as np
+from onnx_inference import CLASS_COLORS_BGR, DEFECT_CLASSES, ONNXDetector
+
 
 class VideoStreamProcessor:
-    def __init__(self, source=0, model_path="best_industrial_defect.onnx", conf_threshold=0.25, fallback_dir="data/images/val"):
+    """
+    Ingests video streams from webcams, video files, single images, or image directory loops.
+    Applies ONNX defect detection and renders real-time bounding box annotations with status telemetry.
+    """
+
+    def __init__(
+        self,
+        source: Union[int, str, Path] = 0,
+        model_path: Union[str, Path] = "best_industrial_defect.onnx",
+        conf_threshold: Optional[Union[float, Dict[int, float]]] = None,
+        fallback_dir: Union[str, Path] = "data/images/val",
+    ):
         self.detector = ONNXDetector(model_path=model_path, conf_threshold=conf_threshold)
         self.source = source
         self.fallback_dir = Path(fallback_dir)
-        self.cap = None
-        self.image_files = []
+        self.cap: Optional[cv2.VideoCapture] = None
+        self.image_files: List[Path] = []
         self.current_img_idx = 0
         self.mode = "camera"
-        
-        # Color palette for classes (BGR format)
-        # 0: crazing (Red), 1: inclusion (Green), 2: patches (Blue), 
-        # 3: pitted_surface (Magenta), 4: rolled-in_scale (Cyan), 5: scratches (Orange)
-        self.colors = [
-            (0, 0, 255),      # Red
-            (0, 255, 0),      # Green
-            (255, 0, 0),      # Blue
-            (255, 0, 255),    # Magenta
-            (255, 255, 0),    # Cyan
-            (0, 165, 255)     # Orange
-        ]
-        
+        self.colors = CLASS_COLORS_BGR
+
         self.init_source()
 
     def init_source(self):
-        # Try to initialize camera if source is an integer, or video/image file path
-        is_image_file = isinstance(self.source, str) and Path(self.source).suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']
-        is_video_file = isinstance(self.source, str) and (os.path.exists(self.source) or self.source.startswith("http")) and not is_image_file
-        
+        """
+        Initializes video capture stream or image fallback directory loop.
+        """
+        source_str = str(self.source)
+        is_image_file = (
+            isinstance(self.source, (str, Path))
+            and Path(source_str).suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
+        )
+        is_video_file = (
+            isinstance(self.source, (str, Path))
+            and (os.path.exists(source_str) or source_str.startswith("http") or source_str.startswith("rtsp"))
+            and not is_image_file
+        )
+
         if is_image_file:
             print(f"Attempting to open image source: {self.source}...")
-            if os.path.exists(self.source):
+            if os.path.exists(source_str):
                 self.mode = "single_image"
                 return
             else:
@@ -49,75 +63,143 @@ class VideoStreamProcessor:
                 return
             else:
                 print(f"Failed to open video source {self.source}. Falling back to directory stream.")
-        
+
         # Directory fallback mode
         self.mode = "directory"
         if self.fallback_dir.exists():
-            self.image_files = sorted(list(self.fallback_dir.glob("*.jpg")))
+            # Support multiple image formats
+            all_images = []
+            for ext in ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.webp"):
+                all_images.extend(self.fallback_dir.glob(ext))
+            self.image_files = sorted(all_images)
             print(f"Directory stream initialized. Found {len(self.image_files)} images in {self.fallback_dir}")
         else:
-            print(f"Error: Fallback directory {self.fallback_dir} does not exist.")
+            print(f"Warning: Fallback directory {self.fallback_dir} does not exist.")
 
-    def draw_detections(self, frame, detections, metrics):
+    def draw_detections(
+        self,
+        frame: np.ndarray,
+        detections: List[Dict[str, Any]],
+        metrics: Dict[str, float],
+    ) -> np.ndarray:
         """
-        Draws colored boxes and text annotations on the frame.
+        Draws colored bounding boxes, defect labels, and a glassmorphic status overlay panel.
         """
+        if frame is None:
+            return frame
+
         annotated_frame = frame.copy()
-        
-        # Draw bounding boxes
+
+        # Draw bounding boxes and labels
         for det in detections:
             box = det["box"]
             score = det["score"]
             class_id = det["class_id"]
             class_name = det["class_name"]
-            
+
             # Select color based on class ID
             color = self.colors[class_id % len(self.colors)]
-            
+
             # Draw box
             cv2.rectangle(annotated_frame, (box[0], box[1]), (box[2], box[3]), color, 2)
-            
-            # Label background
+
+            # Label background badge
             label = f"{class_name} {score:.2f}"
-            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-            cv2.rectangle(annotated_frame, (box[0], box[1] - h - 5), (box[0] + w + 5, box[1]), color, -1)
-            
-            # Draw text
-            cv2.putText(annotated_frame, label, (box[0] + 2, box[1] - 3), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
-            
-        # Draw status overlay panel (glassmorphic style background)
+            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            y_badge = max(box[1] - h - 6, 0)
+            cv2.rectangle(
+                annotated_frame,
+                (box[0], y_badge),
+                (box[0] + w + 6, y_badge + h + 6),
+                color,
+                -1,
+            )
+
+            # Draw text label
+            cv2.putText(
+                annotated_frame,
+                label,
+                (box[0] + 3, y_badge + h + 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
+
+        # Draw status overlay telemetry panel (glassmorphic style background)
         overlay = annotated_frame.copy()
-        cv2.rectangle(overlay, (5, 5), (260, 95), (30, 30, 30), -1)
-        cv2.addWeighted(overlay, 0.6, annotated_frame, 0.4, 0, annotated_frame)
-        
-        # Add details
-        fps = 1000.0 / metrics['total_ms'] if metrics['total_ms'] > 0 else 0.0
-        cv2.putText(annotated_frame, f"System Status: ONLINE", (10, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, cv2.LINE_AA)
-        cv2.putText(annotated_frame, f"Model: YOLOv8 ONNX (CPU)", (10, 35),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(annotated_frame, f"Inference Latency: {metrics['inference_ms']:.1f} ms", (10, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(annotated_frame, f"Inference FPS: {fps:.1f} FPS", (10, 65),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(annotated_frame, f"Defects Detected: {len(detections)}", (10, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255) if len(detections) > 0 else (255, 255, 255), 1, cv2.LINE_AA)
-        
+        cv2.rectangle(overlay, (5, 5), (280, 100), (20, 25, 35), -1)
+        cv2.addWeighted(overlay, 0.7, annotated_frame, 0.3, 0, annotated_frame)
+
+        # Add telemetry details
+        fps = 1000.0 / metrics["total_ms"] if metrics.get("total_ms", 0.0) > 0 else 0.0
+        cv2.putText(
+            annotated_frame,
+            "System Status: ONLINE",
+            (12, 22),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (0, 255, 0),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            annotated_frame,
+            f"Device: {self.detector.device_name}",
+            (12, 38),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (240, 240, 240),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            annotated_frame,
+            f"Inference Latency: {metrics.get('inference_ms', 0.0):.1f} ms",
+            (12, 54),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (240, 240, 240),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            annotated_frame,
+            f"Throughput: {fps:.1f} FPS",
+            (12, 70),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (240, 240, 240),
+            1,
+            cv2.LINE_AA,
+        )
+        defect_color = (0, 0, 255) if len(detections) > 0 else (200, 200, 200)
+        cv2.putText(
+            annotated_frame,
+            f"Defects Detected: {len(detections)}",
+            (12, 86),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            defect_color,
+            1,
+            cv2.LINE_AA,
+        )
+
         return annotated_frame
 
-    def get_frame(self):
+    def get_frame(self) -> Optional[np.ndarray]:
         """
-        Retrieves next frame from camera or directory list.
+        Retrieves the next frame from active camera, video stream, single image, or directory list.
         """
         if self.mode == "camera" and self.cap:
             ret, frame = self.cap.read()
             if ret:
                 return frame
             else:
-                # If we're playing a video file, loop it!
-                if isinstance(self.source, str):
-                    print("Video source reached end. Looping...")
+                # Loop video file if reaching end
+                if isinstance(self.source, (str, Path)):
+                    print("Video source reached end. Looping stream...")
                     self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, frame = self.cap.read()
                     if ret:
@@ -125,33 +207,34 @@ class VideoStreamProcessor:
                 print("Failed to grab frame from camera. Re-initializing source...")
                 self.init_source()
                 return None
-                
+
         elif self.mode == "directory":
             if not self.image_files:
                 return None
             img_path = self.image_files[self.current_img_idx]
             frame = cv2.imread(str(img_path))
-            # Move to next index (loop around)
             self.current_img_idx = (self.current_img_idx + 1) % len(self.image_files)
             return frame
-            
+
         elif self.mode == "single_image":
             frame = cv2.imread(str(self.source))
-            # Throttle slightly to simulate ~30 FPS stream of static image
-            time.sleep(0.03)
+            time.sleep(0.03)  # Throttle slightly to simulate ~30 FPS stream of static image
             return frame
-            
+
         return None
 
-    def start_loop(self, max_frames=50, save_output=True):
+    def start_loop(self, max_frames: int = 50, save_output: bool = True):
+        """
+        Runs a continuous processing loop for standalone debugging / offline analysis.
+        """
         print(f"Starting video stream processing loop (mode: {self.mode}). Press Ctrl+C to stop.")
         output_dir = Path("data/output_stream")
         if save_output:
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
         frame_count = 0
         gui_disabled = False
-        
+
         try:
             while frame_count < max_frames:
                 frame = self.get_frame()
@@ -159,35 +242,33 @@ class VideoStreamProcessor:
                     print("No frame available, sleeping...")
                     time.sleep(0.5)
                     continue
-                    
+
                 # Run prediction
                 detections, metrics = self.detector.predict(frame)
-                
+
                 # Annotate frame
                 annotated_frame = self.draw_detections(frame, detections, metrics)
-                
-                # Try to display GUI
+
+                # Try GUI display
                 if not gui_disabled:
                     try:
                         cv2.imshow("Industrial Defect Stream", annotated_frame)
-                        # Wait for 30ms or key press
-                        if cv2.waitKey(30) & 0xFF == ord('q'):
+                        if cv2.waitKey(30) & 0xFF == ord("q"):
                             break
                     except Exception:
                         print("GUI/Display is not available. Continuing in headless mode.")
                         gui_disabled = True
-                
-                # Save to output directory
+
+                # Save output frame
                 if save_output:
                     out_path = output_dir / f"stream_{frame_count:04d}.jpg"
                     cv2.imwrite(str(out_path), annotated_frame)
-                    
+
                 frame_count += 1
-                
-                # Simulate frame rate delay if reading directory files
+
                 if self.mode == "directory":
-                    time.sleep(0.1) # 10 FPS
-                    
+                    time.sleep(0.1)
+
         except KeyboardInterrupt:
             print("Loop stopped by user.")
         finally:
@@ -195,6 +276,9 @@ class VideoStreamProcessor:
             print("Video stream processor stopped.")
 
     def release(self):
+        """
+        Releases capture device and open windows.
+        """
         if self.cap:
             self.cap.release()
         try:
@@ -202,7 +286,8 @@ class VideoStreamProcessor:
         except Exception:
             pass
 
+
 if __name__ == "__main__":
-    processor = VideoStreamProcessor(source=0, conf_threshold=0.15)
-    # Run a short 20-frame loop to test
-    processor.start_loop(max_frames=20, save_output=True)
+    processor = VideoStreamProcessor(source=0, conf_threshold=0.25)
+    processor.start_loop(max_frames=10, save_output=False)
+
