@@ -1,3 +1,4 @@
+import argparse
 import os
 import time
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 import cv2
 import numpy as np
 from onnx_inference import CLASS_COLORS_BGR, DEFECT_CLASSES, ONNXDetector
+
 
 
 class VideoStreamProcessor:
@@ -288,6 +290,53 @@ class VideoStreamProcessor:
 
 
 if __name__ == "__main__":
-    processor = VideoStreamProcessor(source=0, conf_threshold=0.25)
-    processor.start_loop(max_frames=10, save_output=False)
+    parser = argparse.ArgumentParser(description="Real-time industrial defect detection video stream processor.")
+    parser.add_argument(
+        "--source",
+        type=str,
+        default="0",
+        help="Input video source: webcam index (0), video file path, image path, or 'directory'",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="best_industrial_defect.onnx",
+        help="Path to ONNX model weights",
+    )
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=None,
+        help="Confidence threshold override (e.g. 0.25). Defaults to optimized per-class thresholds.",
+    )
+    parser.add_argument(
+        "--fallback-dir",
+        type=str,
+        default="data/images/val",
+        help="Fallback image directory for directory looping mode",
+    )
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=100,
+        help="Maximum frames to process before stopping",
+    )
+    parser.add_argument(
+        "--save-output",
+        action="store_true",
+        help="Save annotated stream frames to data/output_stream/",
+    )
+    args = parser.parse_args()
+
+    # Cast integer source if valid numeric webcam index
+    src: Union[int, str] = int(args.source) if args.source.isdigit() else args.source
+
+    processor = VideoStreamProcessor(
+        source=src,
+        model_path=args.model,
+        conf_threshold=args.conf,
+        fallback_dir=args.fallback_dir,
+    )
+    processor.start_loop(max_frames=args.max_frames, save_output=args.save_output)
+
 
