@@ -238,6 +238,76 @@ class ONNXDetector:
         else:
             raise TypeError(f"Unsupported image input type: {type(image_input)}")
 
+    def annotate_image(
+        self,
+        img: np.ndarray,
+        detections: List[Dict[str, Any]],
+        show_confidence: bool = True,
+    ) -> np.ndarray:
+        """
+        Draws defect bounding boxes and labels directly onto a copy of the given image.
+        """
+        if img is None or not isinstance(img, np.ndarray) or img.size == 0:
+            raise ValueError("Input image is None or empty.")
+
+        annotated = img.copy()
+        for det in detections:
+            box = det["box"]
+            score = det.get("score", 1.0)
+            class_id = det.get("class_id", 0)
+            class_name = det.get("class_name", "defect")
+
+            color = self.colors_bgr[class_id % len(self.colors_bgr)]
+            cv2.rectangle(annotated, (box[0], box[1]), (box[2], box[3]), color, 2)
+
+            label = f"{class_name} {score:.2f}" if show_confidence else class_name
+            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            y_badge = max(box[1] - h - 6, 0)
+            cv2.rectangle(
+                annotated,
+                (box[0], y_badge),
+                (box[0] + w + 6, y_badge + h + 6),
+                color,
+                -1,
+            )
+            cv2.putText(
+                annotated,
+                label,
+                (box[0] + 3, y_badge + h + 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
+        return annotated
+
+    def predict_and_annotate(
+        self,
+        image_input: Union[str, Path, bytes, np.ndarray],
+        show_confidence: bool = True,
+    ) -> Tuple[np.ndarray, List[Dict[str, Any]], Dict[str, float]]:
+        """
+        Runs detection and returns an annotated BGR image along with detections and metrics.
+        """
+        if isinstance(image_input, (str, Path)):
+            img = cv2.imread(str(image_input))
+            if img is None:
+                raise ValueError(f"Could not decode image from path: {image_input}")
+        elif isinstance(image_input, bytes):
+            np_arr = np.frombuffer(image_input, np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise ValueError("Could not decode image from provided byte stream.")
+        elif isinstance(image_input, np.ndarray):
+            img = image_input
+        else:
+            raise TypeError(f"Unsupported image input type: {type(image_input)}")
+
+        detections, metrics = self.predict(img)
+        annotated_img = self.annotate_image(img, detections, show_confidence=show_confidence)
+        return annotated_img, detections, metrics
+
 
 if __name__ == "__main__":
     detector = ONNXDetector()

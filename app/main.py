@@ -370,6 +370,55 @@ async def detect_defects(
         raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
 
 
+@app.post("/api/detect/visualize")
+async def detect_defects_visualize(
+    file: UploadFile = File(...),
+    conf_threshold: Optional[float] = None,
+):
+    """
+    Direct REST API for single-image defect detection with visual bounding box overlay.
+    Accepts image file (JPEG, PNG, BMP, WEBP) and returns the annotated image directly as JPEG.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No image file provided.")
+
+    allowed_image_exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    ext = Path(file.filename).suffix.lower()
+    if ext not in allowed_image_exts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type '{ext}'. Allowed types: JPG, JPEG, PNG, BMP, WEBP.",
+        )
+
+    try:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        np_arr = np.frombuffer(content, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Failed to decode image bytes.")
+
+        active_det = detector
+        if conf_threshold is not None:
+            active_det = ONNXDetector(
+                model_path=detector.model_path,
+                conf_threshold=conf_threshold,
+            )
+
+        annotated_img, detections, metrics = active_det.predict_and_annotate(img)
+        ret, jpeg = cv2.imencode(".jpg", annotated_img)
+        if not ret:
+            raise HTTPException(status_code=500, detail="Failed to encode annotated image.")
+
+        return Response(content=jpeg.tobytes(), media_type="image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
+
+
 # Setup upload directory
 UPLOAD_DIR = Path("data/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

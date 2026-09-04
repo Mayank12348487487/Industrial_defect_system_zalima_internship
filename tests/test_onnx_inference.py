@@ -82,3 +82,27 @@ def test_custom_threshold_override():
     detections, _ = custom_detector.predict(dummy_img)
     # High threshold should filter out almost everything
     assert len(detections) == 0
+
+
+def test_annotate_image(detector):
+    dummy_img = np.zeros((640, 640, 3), dtype=np.uint8)
+    sample_detections = [
+        {"box": [50, 50, 200, 200], "score": 0.88, "class_id": 0, "class_name": "crazing"},
+        {"box": [220, 100, 350, 300], "score": 0.95, "class_id": 1, "class_name": "inclusion"},
+    ]
+    annotated = detector.annotate_image(dummy_img, sample_detections)
+    assert annotated is not None
+    assert annotated.shape == dummy_img.shape
+    # Frame should be drawn on (not all zeros)
+    assert np.any(annotated > 0)
+
+
+def test_predict_and_annotate(detector):
+    dummy_img = np.zeros((640, 640, 3), dtype=np.uint8)
+    annotated_img, detections, metrics = detector.predict_and_annotate(dummy_img)
+    assert annotated_img is not None
+    assert annotated_img.shape == dummy_img.shape
+    assert isinstance(detections, list)
+    assert isinstance(metrics, dict)
+    assert "total_ms" in metrics
+

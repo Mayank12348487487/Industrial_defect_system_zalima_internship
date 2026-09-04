@@ -128,7 +128,9 @@ Evaluated on the NEU Metal Surface Defects validation split:
 - `GET /api/detections` - Returns latest frame detections and inference latency.
 - `GET /api/export_report` - Generates a structured system telemetry and defect summary report for quality audits.
 - `POST /api/detect` - Direct single-image REST inference returning defect coordinates, classes, confidence scores, and latency.
+- `POST /api/detect/visualize` - Single-image REST inference returning the annotated image directly with visual bounding box overlay.
 - `POST /api/set_source` - Form payload `source` switching the active stream feed (`webcam`, `directory`, or file path).
 - `POST /api/upload` - Multipart file upload (`file`) saving media to `data/uploads/` and dynamically switching the feed to it.
 - `WS /ws` - Open WebSocket connection broadcasting JSON updates for telemetry telemetry and PLC signals.
+
 

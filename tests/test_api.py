@@ -94,6 +94,31 @@ def test_detect_endpoint_invalid_extension():
     assert "Unsupported image type" in response.json()["detail"]
 
 
+def test_detect_visualize_endpoint_valid_image():
+    img = np.zeros((100, 100, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".jpg", img)
+    file_bytes = io.BytesIO(encoded.tobytes())
+
+    response = client.post(
+        "/api/detect/visualize",
+        files={"file": ("test_sample.jpg", file_bytes, "image/jpeg")}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert len(response.content) > 0
+
+
+def test_detect_visualize_endpoint_invalid_extension():
+    file_bytes = io.BytesIO(b"fake data")
+    response = client.post(
+        "/api/detect/visualize",
+        files={"file": ("bad_file.txt", file_bytes, "text/plain")}
+    )
+    assert response.status_code == 400
+    assert "Unsupported image type" in response.json()["detail"]
+
+
+
 def test_upload_endpoint_validation():
     # Valid file upload
     img = np.zeros((50, 50, 3), dtype=np.uint8)
