@@ -33,3 +33,26 @@ def test_draw_detections_overlay():
     assert np.any(annotated > 0)
     
     processor.release()
+
+
+def test_video_stream_processor_single_image_mode(tmp_path):
+    import cv2
+    img_path = tmp_path / "test_frame.jpg"
+    dummy_img = np.full((120, 160, 3), 128, dtype=np.uint8)
+    cv2.imwrite(str(img_path), dummy_img)
+
+    processor = VideoStreamProcessor(source=str(img_path))
+    assert processor.mode == "single_image"
+
+    frame = processor.get_frame()
+    assert frame is not None
+    assert frame.shape == (120, 160, 3)
+
+    processor.release()
+
+
+def test_video_stream_processor_nonexistent_image_fallback():
+    processor = VideoStreamProcessor(source="non_existent_image_path_9999.jpg", fallback_dir="data/images/val")
+    assert processor.mode == "directory"
+    processor.release()
+

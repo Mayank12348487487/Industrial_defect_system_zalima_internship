@@ -2,6 +2,7 @@ import argparse
 import os
 import random
 from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
 import cv2
 
@@ -23,9 +24,9 @@ def get_train_transforms():
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
         A.RandomRotate90(p=0.5),
-        A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=45, p=0.5),
+        A.Affine(scale=(0.9, 1.1), translate_percent=(-0.0625, 0.0625), rotate=(-45, 45), p=0.5),
         A.OneOf([
-            A.GaussNoise(var_limit=(10.0, 50.0), p=1.0),
+            A.GaussNoise(p=1.0),
             A.ISONoise(p=1.0),
         ], p=0.3),
         A.OneOf([
@@ -36,25 +37,30 @@ def get_train_transforms():
         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
     ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
 
-def load_yolo_labels(label_path):
-    bboxes = []
-    class_labels = []
-    if not label_path.exists():
+def load_yolo_labels(label_path: Union[str, Path]) -> Tuple[List[List[float]], List[int]]:
+    path = Path(label_path)
+    bboxes: List[List[float]] = []
+    class_labels: List[int] = []
+    if not path.exists():
         return bboxes, class_labels
         
-    with open(label_path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         for line in f:
             parts = line.strip().split()
             if len(parts) == 5:
-                class_id = int(parts[0])
-                x, y, w, h = map(float, parts[1:])
-                # Albumentations expects [x_center, y_center, width, height] for YOLO format
-                bboxes.append([x, y, w, h])
-                class_labels.append(class_id)
+                try:
+                    class_id = int(parts[0])
+                    x, y, w, h = map(float, parts[1:])
+                    bboxes.append([x, y, w, h])
+                    class_labels.append(class_id)
+                except ValueError:
+                    continue
     return bboxes, class_labels
 
-def save_yolo_labels(label_path, bboxes, class_labels):
-    with open(label_path, 'w') as f:
+def save_yolo_labels(label_path: Union[str, Path], bboxes: List[List[float]], class_labels: List[int]) -> None:
+    path = Path(label_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
         for bbox, class_id in zip(bboxes, class_labels):
             # Write class_id x_center y_center width height
             f.write(f"{class_id} {bbox[0]:.6f} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f}\n")
