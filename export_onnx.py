@@ -52,6 +52,7 @@ def main():
         imgsz=args.imgsz,
         dynamic=args.dynamic,
         simplify=True,
+        nms=True,
     )
     print(f"\nModel exported successfully to: {onnx_path}")
 

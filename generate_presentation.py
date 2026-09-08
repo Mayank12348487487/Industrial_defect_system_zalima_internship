@@ -162,11 +162,11 @@ def create_presentation():
     add_card(slide1, 1.0, 5.0, 3.5, 1.6, "Core Technologies", [
         ("Framework", "FastAPI & Python 3.13"),
         ("Inference Engine", "ONNX Runtime (CPU/CUDA)"),
-        ("Model", "YOLOv8s Defect Detector")
+        ("Model", "Improved YOLOv8s (71.0% mAP50)")
     ], border_color=ACCENT_CYAN)
 
     add_card(slide1, 4.9, 5.0, 3.5, 1.6, "Edge Capabilities", [
-        ("Latency", "~4.8ms GPU / ~28.9ms CPU"),
+        ("Latency", "~8.1ms GPU (123 FPS)"),
         ("Industrial Protocol", "WebSocket PLC Telemetry"),
         ("Monitoring", "Prometheus & Glassmorphic UI")
     ], border_color=ACCENT_GREEN)
@@ -192,8 +192,8 @@ def create_presentation():
     ], border_color=ACCENT_ORANGE)
 
     add_card(slide2, 6.9, 1.6, 5.6, 5.2, "Our Edge AI Solution", [
-        ("Sub-30ms Real-Time Inference", "Hardware-accelerated ONNX engine delivers real-time defect isolation within the tight timing window of industrial conveyor belts."),
-        ("Per-Class Optimized Thresholds", "Custom F1-calibrated confidence tuning prevents false-positives while guaranteeing high recall for critical flaws."),
+        ("Sub-10ms Real-Time Inference", "Hardware-accelerated ONNX engine delivers real-time defect isolation (~8.1ms / 123 FPS) on edge GPUs."),
+        ("Per-Class Optimized Thresholds", "Custom F1-calibrated confidence tuning prevents false-positives while guaranteeing 67.9% global recall."),
         ("Simulated PLC Synchronization", "Instantly emits WebSocket JSON coordinate payloads to trigger robotic sorting mechanisms and reject gates."),
         ("Full-Stack Observability", "Prometheus scrape endpoint and glassmorphic telemetry dashboard provide continuous line visibility.")
     ], border_color=ACCENT_GREEN)
@@ -206,12 +206,12 @@ def create_presentation():
     add_header(slide3, "Defect Classes", "NEU Metal Surface Defect Taxonomy", "Comprehensive detection across 6 critical hot-rolled steel surface flaws")
 
     defects = [
-        ("Patches (88.1% AP50)", "Thick, high-contrast surface irregularities. Threshold: 0.50. High precision & clear boundary delineation.", ACCENT_GREEN),
-        ("Inclusion (77.7% AP50)", "Non-metallic particles trapped inside metal matrix. Threshold: 0.39. Granular multi-point clusters.", ACCENT_CYAN),
-        ("Pitted Surface (76.3% AP50)", "Localized pitting/cavities from acid pickling. Threshold: 0.30. Distributed pinhole craters.", ACCENT_PURPLE),
-        ("Scratches (75.1% AP50)", "Linear mechanical abrasions from rollers. Threshold: 0.22. Long diagonal thin trails.", ACCENT_CYAN),
-        ("Rolled-in Scale (57.5% AP50)", "Iron oxide scales pressed during rolling. Threshold: 0.25. Irregular dark textured patches.", ACCENT_ORANGE),
-        ("Crazing (43.3% AP50)", "Network of spiderweb micro-cracks. Threshold: 0.23. Subtle hairline stress patterns.", ACCENT_ORANGE)
+        ("Patches (92.1% AP50)", "Thick, high-contrast surface irregularities. +4.0% gain over baseline. High precision & clear boundary delineation.", ACCENT_GREEN),
+        ("Inclusion (76.1% AP50)", "Non-metallic particles trapped inside metal matrix. Recall: 76.1%. Granular multi-point clusters.", ACCENT_CYAN),
+        ("Pitted Surface (82.1% AP50)", "Localized pitting/cavities from acid pickling. +5.8% gain over baseline. Distributed pinhole craters.", ACCENT_PURPLE),
+        ("Scratches (73.1% AP50)", "Linear mechanical abrasions from rollers. High 80.2% recall across long diagonal thin trails.", ACCENT_CYAN),
+        ("Rolled-in Scale (53.1% AP50)", "Iron oxide scales pressed during rolling. Irregular dark textured patches.", ACCENT_ORANGE),
+        ("Crazing (49.6% AP50)", "Network of spiderweb micro-cracks. +6.2% improvement over baseline with multi-scale feature pyramids.", ACCENT_ORANGE)
     ]
 
     for i, (d_title, d_desc, d_col) in enumerate(defects):
@@ -237,7 +237,7 @@ def create_presentation():
     add_card(slide4, 4.8, 1.6, 3.7, 5.2, "2. AI Inference Engine", [
         ("ONNX Runtime Core", "Hardware-accelerated engine supporting TensorRT, CUDA, and OpenVINO/CPU."),
         ("Letterbox Preprocessing", "Preserves aspect ratio with symmetric zero-padding and normalized float32 tensors."),
-        ("Class-Wise NMS", "Non-Maximum Suppression (IoU=0.45) with per-class optimized confidence thresholds.")
+        ("End-to-End NMS ONNX", "Embedded Non-Maximum Suppression with per-class F1-calibrated confidence thresholds.")
     ], border_color=ACCENT_GREEN)
 
     add_card(slide4, 8.9, 1.6, 3.6, 5.2, "3. Actuation & UI Layer", [
@@ -251,12 +251,12 @@ def create_presentation():
     # ==========================================
     slide5 = prs.slides.add_slide(blank_slide_layout)
     add_bg(slide5)
-    add_header(slide5, "Model Optimization", "YOLOv8s & Hardware-Accelerated ONNX", "Ultra-low latency execution on edge computing nodes")
+    add_header(slide5, "Model Optimization", "Improved YOLOv8s & Hardware-Accelerated ONNX", "Ultra-low latency execution on edge computing nodes")
 
-    add_metric_badge(slide5, 0.8, 1.6, 2.7, 1.6, "GPU Latency", "4.8 ms", "RTX 2050 / TensorRT", ACCENT_GREEN)
-    add_metric_badge(slide5, 3.8, 1.6, 2.7, 1.6, "CPU Latency", "28.9 ms", "Standard Intel/AMD CPU", ACCENT_CYAN)
-    add_metric_badge(slide5, 6.8, 1.6, 2.7, 1.6, "Throughput", "180+ FPS", "GPU Pipeline Capacity", ACCENT_PURPLE)
-    add_metric_badge(slide5, 9.8, 1.6, 2.7, 1.6, "Global mAP@50", "69.7%", "Validation Benchmark", ACCENT_GREEN)
+    add_metric_badge(slide5, 0.8, 1.6, 2.7, 1.6, "GPU Latency", "8.1 ms", "RTX 2050 (123 FPS)", ACCENT_GREEN)
+    add_metric_badge(slide5, 3.8, 1.6, 2.7, 1.6, "Global Recall", "67.9%", "+4.8% vs Baseline", ACCENT_CYAN)
+    add_metric_badge(slide5, 6.8, 1.6, 2.7, 1.6, "Weakest Class", "+6.2%", "Crazing AP50 Jump", ACCENT_PURPLE)
+    add_metric_badge(slide5, 9.8, 1.6, 2.7, 1.6, "Global mAP@50", "71.0%", "Peak 71.5% mAP50", ACCENT_GREEN)
 
     add_card(slide5, 0.8, 3.5, 5.6, 3.4, "Why ONNX Runtime over Raw PyTorch?", [
         ("Zero Python Overhead", "Optimized C++ execution graph eliminates GIL bottleneck and PyTorch tensor overhead."),
@@ -392,8 +392,8 @@ def create_presentation():
     add_header(slide11, "Evaluation Summary", "Project Impact & Evaluation Takeaways", "High-performance edge solution ready for real-world industrial deployment")
 
     add_card(slide11, 0.8, 1.6, 5.6, 5.2, "Key Achievements", [
-        ("Sub-30ms Edge Speed", "Real-time surface defect detection operating at 30+ FPS CPU / 180+ FPS GPU."),
-        ("69.7% Global mAP50", "High accuracy across 6 complex industrial defect classes on the NEU-DET benchmark."),
+        ("Real-Time Edge Speed", "Surface defect detection operating at ~8.1ms / 123+ FPS GPU real-time throughput."),
+        ("71.0% Global mAP50", "Enhanced accuracy (peak 71.5%) with 67.9% recall (+4.8% gain) on the NEU-DET benchmark."),
         ("F1-Optimized Tuning", "Class-specific confidence thresholds maximizing safety-critical defect recall."),
         ("Zero-Downtime Multi-Source", "Seamless runtime switching between live webcam, validation loop, and video files."),
         ("Industry 4.0 Ready", "WebSocket PLC triggers, Prometheus metrics, and full Docker orchestration.")
