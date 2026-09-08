@@ -97,6 +97,18 @@ except Exception as e:
     sys.exit(1)
 
 
+async def _safe_send_ws(ws: WebSocket, message: Dict[str, Any]):
+    try:
+        await ws.send_json(message)
+    except Exception:
+        if ws in state.active_websockets:
+            try:
+                state.active_websockets.remove(ws)
+                METRIC_ACTIVE_WS.set(len(state.active_websockets))
+            except Exception:
+                pass
+
+
 def broadcast_ws_message(message: Dict[str, Any]):
     """
     Broadcasts message to all active WebSocket connections.
@@ -108,7 +120,7 @@ def broadcast_ws_message(message: Dict[str, Any]):
     loop = getattr(state, "loop", None)
     if loop and loop.is_running():
         for ws in list(state.active_websockets):
-            asyncio.run_coroutine_threadsafe(ws.send_json(message), loop)
+            asyncio.run_coroutine_threadsafe(_safe_send_ws(ws, message), loop)
 
 
 def simulate_plc_broadcast(detections: List[Dict[str, Any]]):
@@ -420,25 +432,48 @@ async def detect_defects_visualize(
 
 
 # Setup upload directory
-UPLOAD_DIR = Path("data/uploads")
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR.parent / "data" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.post("/api/set_source")
 def set_source(source: str = Form(...)):
     """
-    Sets the active stream source: 'webcam', 'directory', or an absolute file path.
+    Sets the active stream source: 'webcam', 'directory', 'video', or a file path.
     """
     with state.lock:
         if source == "webcam":
             state.source_path = 0
             state.source_changed = True
+        elif source.isdigit():
+            state.source_path = int(source)
+            state.source_changed = True
         elif source == "directory":
             state.source_path = "data/images/val"
             state.source_changed = True
+        elif source in ["video", "industry_video.mp4", "data/uploads/industry_video.mp4"]:
+            candidate_paths = [
+                BASE_DIR.parent / "industry_video.mp4",
+                BASE_DIR.parent / "data" / "uploads" / "industry_video.mp4",
+                Path("industry_video.mp4"),
+            ]
+            found = False
+            for p in candidate_paths:
+                if p.exists():
+                    state.source_path = str(p)
+                    state.source_changed = True
+                    found = True
+                    break
+            if not found:
+                state.source_path = "industry_video.mp4"
+                state.source_changed = True
         else:
             if os.path.exists(source):
                 state.source_path = source
+                state.source_changed = True
+            elif (BASE_DIR.parent / source).exists():
+                state.source_path = str(BASE_DIR.parent / source)
                 state.source_changed = True
             else:
                 return {"status": "ERROR", "message": f"Source path {source} does not exist."}
@@ -564,7 +599,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # HTML templates
-templates_dir = Path("app/templates")
+templates_dir = BASE_DIR / "templates"
 templates_dir.mkdir(parents=True, exist_ok=True)
 
 

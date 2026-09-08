@@ -144,11 +144,43 @@ def test_upload_endpoint_validation():
     assert "Unsupported file type" in response_bad.json()["detail"]
 
 
+def test_root_index_endpoint():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "<!DOCTYPE html>" in response.text or "<html" in response.text
+    assert "NEU DETECT" in response.text
+
+
+def test_detect_endpoint_custom_threshold():
+    img = np.zeros((100, 100, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".jpg", img)
+    file_bytes = io.BytesIO(encoded.tobytes())
+
+    response = client.post(
+        "/api/detect?conf_threshold=0.99",
+        files={"file": ("test_high_conf.jpg", file_bytes, "image/jpeg")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert data["defect_count"] == 0
+
+
 def test_set_source_endpoint():
     # Test directory source
     res_dir = client.post("/api/set_source", data={"source": "directory"})
     assert res_dir.status_code == 200
     assert res_dir.json()["status"] == "SUCCESS"
+
+    # Test webcam index source
+    res_webcam = client.post("/api/set_source", data={"source": "webcam"})
+    assert res_webcam.status_code == 200
+    assert res_webcam.json()["status"] == "SUCCESS"
+
+    # Test video source
+    res_vid = client.post("/api/set_source", data={"source": "industry_video.mp4"})
+    assert res_vid.status_code == 200
+    assert res_vid.json()["status"] == "SUCCESS"
 
     # Test invalid path
     res_inv = client.post("/api/set_source", data={"source": "invalid_path_xyz_987"})

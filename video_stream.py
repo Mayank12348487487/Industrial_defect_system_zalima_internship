@@ -25,7 +25,14 @@ class VideoStreamProcessor:
     ):
         self.detector = ONNXDetector(model_path=model_path, conf_threshold=conf_threshold)
         self.source = source
-        self.fallback_dir = Path(fallback_dir)
+        # Resolve fallback directory across roots
+        fallback_p = Path(fallback_dir)
+        if not fallback_p.exists():
+            alt_fallback = Path(__file__).resolve().parent / fallback_dir
+            if alt_fallback.exists():
+                fallback_p = alt_fallback
+        self.fallback_dir = fallback_p
+
         self.cap: Optional[cv2.VideoCapture] = None
         self.image_files: List[Path] = []
         self.current_img_idx = 0
@@ -39,6 +46,12 @@ class VideoStreamProcessor:
         Initializes video capture stream or image fallback directory loop.
         """
         source_str = str(self.source)
+        if isinstance(self.source, (str, Path)) and not os.path.exists(source_str):
+            alt_source = Path(__file__).resolve().parent / source_str
+            if alt_source.exists():
+                self.source = alt_source
+                source_str = str(self.source)
+
         is_image_file = (
             isinstance(self.source, (str, Path))
             and Path(source_str).suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp", ".webp"]

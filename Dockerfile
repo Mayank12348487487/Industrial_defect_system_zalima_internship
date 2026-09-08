@@ -18,14 +18,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
+# Copy application files and models
 COPY onnx_inference.py .
 COPY video_stream.py .
 COPY best_industrial_defect.onnx .
+COPY industry_video.mp4 .
 
-# Copy dataset structure for directory simulation fallback
+# Setup directory structure and data config
+RUN mkdir -p data/images/val data/uploads data/output_stream
 COPY data/data.yaml ./data/data.yaml
-COPY data/images/val/ ./data/images/val/
 
 # Copy FastAPI app structure
 COPY app/ ./app/

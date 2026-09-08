@@ -71,6 +71,19 @@ class ONNXDetector:
         else:
             self.conf_threshold = conf_threshold
 
+        # Resolve model path across relative execution roots
+        resolved_path = Path(model_path)
+        if not resolved_path.exists():
+            candidates = [
+                Path(__file__).resolve().parent / model_path,
+                Path(__file__).resolve().parent.parent / model_path,
+            ]
+            for candidate in candidates:
+                if candidate.exists():
+                    resolved_path = candidate
+                    break
+
+        self.model_path = str(resolved_path)
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"ONNX model file not found at: {self.model_path}")
 
