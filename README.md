@@ -101,19 +101,20 @@ Evaluated on the NEU Metal Surface Defects validation split:
 
 | Metric | CPU Performance | GPU (RTX 2050) Performance |
 |---|---|---|
-| **Inference Latency** | ~28.9 ms | **~4.8 ms** |
-| **Throughput** | ~32 FPS | **~180+ FPS** |
-| **mAP@50 (Global)** | 69.7% | 69.7% |
+| **Inference Latency** | ~119 ms | **~8.1 ms** |
+| **Throughput** | ~8.4 FPS | **~123+ FPS** |
+| **Global Recall** | 67.9% | **67.9% (+4.8% vs Baseline)** |
+| **mAP@50 (Global)** | **71.0%** (Peak 71.5%) | **71.0%** (Peak 71.5%) |
 
 ### Class-Wise Accuracy & Confidence Thresholds
-| Defect Class | AP@50 | Optimized Confidence Threshold |
-|---|---|---|
-| **Patches** | 88.1% | `0.50` |
-| **Inclusion** | 77.7% | `0.39` |
-| **Pitted Surface** | 76.3% | `0.30` |
-| **Scratches** | 75.1% | `0.22` |
-| **Rolled-in Scale** | 57.5% | `0.25` |
-| **Crazing** | 43.3% | `0.23` |
+| Defect Class | AP@50 | Delta vs Baseline | Optimized Confidence Threshold |
+|---|---|---|---|
+| **Patches** | **92.1%** | +4.0% | `0.50` |
+| **Pitted Surface** | **82.1%** | +5.8% | `0.30` |
+| **Inclusion** | **76.1%** | Maintained | `0.39` |
+| **Scratches** | **73.1%** | 80.2% Recall | `0.22` |
+| **Rolled-in Scale** | **53.1%** | Maintained | `0.25` |
+| **Crazing** | **49.6%** | **+6.2%** | `0.23` |
 
 ---
 
