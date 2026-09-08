@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import sys
@@ -336,7 +337,8 @@ async def detect_defects(
 ):
     """
     Direct REST API for single-image defect detection.
-    Accepts image file (JPEG, PNG, BMP, WEBP) and returns defect coordinates, classes, scores, and latency.
+    Accepts image file (JPEG, PNG, BMP, WEBP) and returns defect coordinates, classes, scores, latency,
+    and base64-encoded annotated visualization.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No image file provided.")
@@ -359,14 +361,18 @@ async def detect_defects(
         if img is None:
             raise HTTPException(status_code=400, detail="Failed to decode image bytes.")
 
+        active_det = detector
         if conf_threshold is not None:
-            custom_detector = ONNXDetector(
+            active_det = ONNXDetector(
                 model_path=detector.model_path,
                 conf_threshold=conf_threshold,
             )
-            detections, metrics = custom_detector.predict(img)
-        else:
-            detections, metrics = detector.predict(img)
+
+        annotated_img, detections, metrics = active_det.predict_and_annotate(img)
+        ret, jpeg = cv2.imencode(".jpg", annotated_img)
+        annotated_base64 = ""
+        if ret:
+            annotated_base64 = "data:image/jpeg;base64," + base64.b64encode(jpeg.tobytes()).decode("utf-8")
 
         return {
             "status": "SUCCESS",
@@ -375,11 +381,65 @@ async def detect_defects(
             "defect_count": len(detections),
             "detections": detections,
             "metrics": metrics,
+            "annotated_image_base64": annotated_base64,
         }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
+
+
+@app.get("/api/samples")
+def get_sample_images():
+    """
+    Returns a curated list of sample defect images for quick 1-click inspection testing.
+    """
+    val_dir = BASE_DIR.parent / "data" / "images" / "val"
+    classes = [
+        ("crazing", "Crazing Cracks"),
+        ("inclusion", "Inclusion"),
+        ("patches", "Patches"),
+        ("pitted_surface", "Pitted Surface"),
+        ("rolled-in_scale", "Rolled-in Scale"),
+        ("scratches", "Scratches"),
+    ]
+    
+    samples = []
+    if val_dir.exists():
+        for cls_name, cls_label in classes:
+            matches = sorted(list(val_dir.glob(f"{cls_name}_*.jpg")))
+            if matches:
+                sample_file = matches[0].name
+                samples.append({
+                    "class_name": cls_name,
+                    "label": cls_label,
+                    "filename": sample_file,
+                    "url": f"/api/samples/{sample_file}",
+                })
+    return {"samples": samples}
+
+
+@app.get("/api/samples/{filename}")
+def get_sample_image_file(filename: str):
+    """
+    Serves sample defect image files directly.
+    """
+    # Sanitize filename
+    clean_name = Path(filename).name
+    val_dir = BASE_DIR.parent / "data" / "images" / "val"
+    target_path = val_dir / clean_name
+    
+    if not target_path.exists() or not target_path.is_file():
+        # Fallback to train dir or upload dir
+        train_dir = BASE_DIR.parent / "data" / "images" / "train"
+        target_path = train_dir / clean_name
+        if not target_path.exists():
+            raise HTTPException(status_code=404, detail=f"Sample image '{clean_name}' not found.")
+            
+    with open(target_path, "rb") as f:
+        image_bytes = f.read()
+        
+    return Response(content=image_bytes, media_type="image/jpeg")
 
 
 @app.post("/api/detect/visualize")

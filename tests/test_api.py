@@ -186,3 +186,44 @@ def test_set_source_endpoint():
     res_inv = client.post("/api/set_source", data={"source": "invalid_path_xyz_987"})
     assert res_inv.status_code == 200
     assert res_inv.json()["status"] == "ERROR"
+
+
+def test_samples_endpoint():
+    response = client.get("/api/samples")
+    assert response.status_code == 200
+    data = response.json()
+    assert "samples" in data
+    assert isinstance(data["samples"], list)
+    if len(data["samples"]) > 0:
+        sample = data["samples"][0]
+        assert "class_name" in sample
+        assert "label" in sample
+        assert "filename" in sample
+        assert "url" in sample
+
+        # Test fetching the sample image file directly
+        file_res = client.get(f"/api/samples/{sample['filename']}")
+        assert file_res.status_code == 200
+        assert file_res.headers["content-type"] == "image/jpeg"
+        assert len(file_res.content) > 0
+
+
+def test_samples_endpoint_nonexistent():
+    response = client.get("/api/samples/non_existent_defect_file_12345.jpg")
+    assert response.status_code == 404
+
+
+def test_detect_endpoint_returns_annotated_base64():
+    img = np.zeros((100, 100, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".jpg", img)
+    file_bytes = io.BytesIO(encoded.tobytes())
+
+    response = client.post(
+        "/api/detect",
+        files={"file": ("test_annotation.jpg", file_bytes, "image/jpeg")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "annotated_image_base64" in data
+    assert data["annotated_image_base64"].startswith("data:image/jpeg;base64,")
+
