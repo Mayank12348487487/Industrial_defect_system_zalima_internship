@@ -22,3 +22,18 @@ services:
     restart: unless-stopped
     depends_on:
       - web
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: defect-detection-grafana
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+
