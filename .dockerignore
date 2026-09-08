@@ -1,0 +1,17 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.venv
+venv
+runs/
+data/images/
+data/labels/
+data/augmented/
+data/output_stream/
+.vscode
+.idea
+*.md
