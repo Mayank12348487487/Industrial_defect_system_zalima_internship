@@ -227,3 +227,108 @@ def test_detect_endpoint_returns_annotated_base64():
     assert "annotated_image_base64" in data
     assert data["annotated_image_base64"].startswith("data:image/jpeg;base64,")
 
+
+def test_batch_detect_endpoint_success():
+    img1 = np.zeros((100, 100, 3), dtype=np.uint8)
+    img2 = np.ones((120, 120, 3), dtype=np.uint8) * 200
+    _, enc1 = cv2.imencode(".jpg", img1)
+    _, enc2 = cv2.imencode(".png", img2)
+
+    response = client.post(
+        "/api/detect/batch",
+        files=[
+            ("files", ("batch_img1.jpg", io.BytesIO(enc1.tobytes()), "image/jpeg")),
+            ("files", ("batch_img2.png", io.BytesIO(enc2.tobytes()), "image/png")),
+        ]
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert data["total_images_processed"] == 2
+    assert "defective_images_count" in data
+    assert "clean_images_count" in data
+    assert "defect_rate_percentage" in data
+    assert "class_distribution" in data
+    assert "batch_summary_metrics" in data
+    assert len(data["results"]) == 2
+    assert data["results"][0]["filename"] == "batch_img1.jpg"
+    assert data["results"][1]["filename"] == "batch_img2.png"
+
+
+def test_batch_detect_endpoint_invalid_extension():
+    response = client.post(
+        "/api/detect/batch",
+        files=[
+            ("files", ("invalid.pdf", io.BytesIO(b"fake pdf"), "application/pdf")),
+        ]
+    )
+    assert response.status_code == 400
+    assert "Unsupported file" in response.json()["detail"]
+
+
+def test_get_thresholds_endpoint():
+    response = client.get("/api/config/thresholds")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert "current_thresholds" in data
+    assert "default_thresholds" in data
+    assert "crazing" in data["current_thresholds"]
+    assert "scratches" in data["current_thresholds"]
+
+
+def test_update_thresholds_endpoint():
+    # Update per-class threshold
+    response = client.post(
+        "/api/config/thresholds",
+        json={"thresholds": {"crazing": 0.42, "scratches": 0.33}}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert data["current_thresholds"]["crazing"] == 0.42
+    assert data["current_thresholds"]["scratches"] == 0.33
+
+    # Update global threshold
+    res_global = client.post(
+        "/api/config/thresholds",
+        json={"global": 0.37}
+    )
+    assert res_global.status_code == 200
+    global_data = res_global.json()
+    for cls_name, thresh in global_data["current_thresholds"].items():
+        assert thresh == 0.37
+
+    # Reset back to defaults
+    res_reset = client.post("/api/config/thresholds/reset")
+    assert res_reset.status_code == 200
+    reset_data = res_reset.json()
+    assert reset_data["status"] == "SUCCESS"
+    assert reset_data["current_thresholds"]["crazing"] == 0.23
+
+
+def test_update_thresholds_invalid_values():
+    # Out of range threshold (> 0.99)
+    res_high = client.post(
+        "/api/config/thresholds",
+        json={"thresholds": {"crazing": 1.5}}
+    )
+    assert res_high.status_code == 400
+
+    # Unknown defect class
+    res_unknown = client.post(
+        "/api/config/thresholds",
+        json={"thresholds": {"unknown_defect_xyz": 0.5}}
+    )
+    assert res_unknown.status_code == 400
+
+
+def test_export_audit_csv_endpoint():
+    response = client.get("/api/export_audit_csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment; filename=" in response.headers["content-disposition"]
+    csv_text = response.text
+    assert "timestamp,unix_time,source_type,filename" in csv_text
+
+

@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 # Workaround for OpenMP issue
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-from onnx_inference import CLASS_COLORS_BGR, DEFECT_CLASSES, ONNXDetector
+from onnx_inference import CLASS_COLORS_BGR, DEFECT_CLASSES, ONNXDetector, OPTIMIZED_CONFIDENCE_THRESHOLDS
 from video_stream import VideoStreamProcessor
 
 
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Industrial Defect Detection Service",
     description="Edge-optimized AI service for real-time surface defect detection and PLC automation.",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -79,12 +79,44 @@ class SystemState:
         self.camera_online = False
         self.start_time = time.time()
         self.active_websockets: List[WebSocket] = []
+        self.audit_history: List[Dict[str, Any]] = []
+        self.max_audit_records: int = 1000
         self.lock = threading.Lock()
 
         # Dynamic source configuration
         source_env = os.getenv("VIDEO_SOURCE", "0")
         self.source_path = int(source_env) if source_env.isdigit() else source_env
         self.source_changed = False
+
+    def record_audit(
+        self,
+        source_type: str,
+        detections: List[Dict[str, Any]],
+        metrics: Dict[str, float],
+        filename: Optional[str] = None,
+    ):
+        """
+        Appends detection events to rolling audit history for quality traceability.
+        """
+        with self.lock:
+            ts = time.time()
+            iso_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+            for i, det in enumerate(detections):
+                record = {
+                    "timestamp": iso_time,
+                    "unix_time": ts,
+                    "source_type": source_type,
+                    "filename": filename or "stream_frame",
+                    "defect_index": i + 1,
+                    "class_name": det["class_name"],
+                    "confidence": round(det["score"], 4),
+                    "box": det["box"],
+                    "latency_ms": round(metrics.get("inference_ms", 0.0), 2),
+                    "device": detector.device_name if detector else "unknown",
+                }
+                self.audit_history.append(record)
+            if len(self.audit_history) > self.max_audit_records:
+                self.audit_history = self.audit_history[-self.max_audit_records:]
 
 
 state = SystemState()
@@ -214,6 +246,7 @@ def stream_processing_thread():
             # Broadcast PLC signals
             if len(detections) > 0:
                 simulate_plc_broadcast(detections)
+                state.record_audit("stream", detections, metrics)
 
             # Broadcast telemetry update to Web UI
             broadcast_ws_message({
@@ -374,6 +407,9 @@ async def detect_defects(
         if ret:
             annotated_base64 = "data:image/jpeg;base64," + base64.b64encode(jpeg.tobytes()).decode("utf-8")
 
+        if len(detections) > 0:
+            state.record_audit("rest_single", detections, metrics, filename=file.filename)
+
         return {
             "status": "SUCCESS",
             "filename": file.filename,
@@ -387,6 +423,266 @@ async def detect_defects(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
+
+
+@app.post("/api/detect/batch")
+async def detect_defects_batch(
+    files: List[UploadFile] = File(...),
+    conf_threshold: Optional[float] = None,
+):
+    """
+    Batch REST API for multi-image defect detection.
+    Processes multiple image files, returning individual image detections,
+    defect breakdown, and aggregate batch statistics (defect rate, class distribution, mean latency).
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided for batch detection.")
+
+    MAX_BATCH_SIZE = 32
+    if len(files) > MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch size exceeds maximum limit of {MAX_BATCH_SIZE} files.",
+        )
+
+    allowed_image_exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    active_det = detector
+    if conf_threshold is not None:
+        active_det = ONNXDetector(
+            model_path=detector.model_path,
+            conf_threshold=conf_threshold,
+        )
+
+    batch_results = []
+    class_distribution: Dict[str, int] = {cls_name: 0 for cls_name in active_det.classes}
+    total_defects = 0
+    defective_images_count = 0
+    total_inference_ms = 0.0
+
+    for file in files:
+        if not file.filename:
+            continue
+        ext = Path(file.filename).suffix.lower()
+        if ext not in allowed_image_exts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file '{file.filename}'. Allowed types: JPG, JPEG, PNG, BMP, WEBP.",
+            )
+
+        content = await file.read()
+        if not content:
+            continue
+
+        np_arr = np.frombuffer(content, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            continue
+
+        detections, metrics = active_det.predict(img)
+        defect_count = len(detections)
+        total_defects += defect_count
+        if defect_count > 0:
+            defective_images_count += 1
+            state.record_audit("rest_batch", detections, metrics, filename=file.filename)
+
+        for det in detections:
+            cls_name = det["class_name"]
+            class_distribution[cls_name] = class_distribution.get(cls_name, 0) + 1
+
+        total_inference_ms += metrics.get("inference_ms", 0.0)
+
+        batch_results.append({
+            "filename": file.filename,
+            "image_dimensions": {"width": img.shape[1], "height": img.shape[0]},
+            "defect_count": defect_count,
+            "detections": detections,
+            "metrics": metrics,
+        })
+
+    total_images_processed = len(batch_results)
+    if total_images_processed == 0:
+        raise HTTPException(status_code=400, detail="No valid images could be processed.")
+
+    clean_images_count = total_images_processed - defective_images_count
+    defect_rate_pct = round((defective_images_count / total_images_processed) * 100.0, 2)
+    mean_latency_ms = round(total_inference_ms / total_images_processed, 2)
+
+    return {
+        "status": "SUCCESS",
+        "total_images_processed": total_images_processed,
+        "defective_images_count": defective_images_count,
+        "clean_images_count": clean_images_count,
+        "total_defects_found": total_defects,
+        "defect_rate_percentage": defect_rate_pct,
+        "class_distribution": class_distribution,
+        "batch_summary_metrics": {
+            "total_inference_ms": round(total_inference_ms, 2),
+            "mean_latency_ms": mean_latency_ms,
+            "throughput_fps": round(1000.0 / mean_latency_ms, 2) if mean_latency_ms > 0 else 0.0,
+        },
+        "results": batch_results,
+    }
+
+
+@app.get("/api/config/thresholds")
+def get_threshold_config():
+    """
+    Returns the currently active confidence thresholds and default baseline thresholds.
+    """
+    if not detector:
+        raise HTTPException(status_code=503, detail="Detector is not initialized.")
+
+    return {
+        "status": "SUCCESS",
+        "current_thresholds": detector.get_thresholds_dict(),
+        "default_thresholds": {
+            detector.classes[k]: v for k, v in OPTIMIZED_CONFIDENCE_THRESHOLDS.items()
+        },
+        "classes": detector.get_class_metadata(),
+    }
+
+
+@app.post("/api/config/thresholds")
+def update_threshold_config(payload: Dict[str, Any]):
+    """
+    Dynamically updates per-class or global confidence thresholds at runtime.
+    Payload example: {"thresholds": {"crazing": 0.25, "scratches": 0.30}} or {"global": 0.35}
+    """
+    if not detector:
+        raise HTTPException(status_code=503, detail="Detector is not initialized.")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+
+    try:
+        if "global" in payload:
+            global_val = float(payload["global"])
+            if not (0.01 <= global_val <= 0.99):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Global threshold must be between 0.01 and 0.99, got {global_val}",
+                )
+            for cls_name in detector.classes:
+                detector.set_threshold(cls_name, global_val)
+
+        if "thresholds" in payload:
+            thresholds_dict = payload["thresholds"]
+            if not isinstance(thresholds_dict, dict):
+                raise HTTPException(status_code=400, detail="'thresholds' field must be a dictionary.")
+            for k, v in thresholds_dict.items():
+                val = float(v)
+                if not (0.01 <= val <= 0.99):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Threshold for '{k}' must be between 0.01 and 0.99, got {val}",
+                    )
+                detector.set_threshold(k, val)
+
+        return {
+            "status": "SUCCESS",
+            "message": "Confidence thresholds updated successfully.",
+            "current_thresholds": detector.get_thresholds_dict(),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update thresholds: {str(e)}")
+
+
+@app.post("/api/config/thresholds/reset")
+def reset_threshold_config():
+    """
+    Resets confidence thresholds back to the F1-optimal baseline settings.
+    """
+    if not detector:
+        raise HTTPException(status_code=503, detail="Detector is not initialized.")
+
+    current = detector.reset_thresholds()
+    return {
+        "status": "SUCCESS",
+        "message": "Confidence thresholds reset to defaults.",
+        "current_thresholds": current,
+    }
+
+
+@app.get("/api/export_audit_csv")
+def export_audit_csv():
+    """
+    Generates a downloadable RFC 4180 CSV quality audit report containing logged defect events,
+    coordinates, confidence scores, and latency metrics for manufacturing traceability.
+    """
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "timestamp",
+        "unix_time",
+        "source_type",
+        "filename",
+        "defect_index",
+        "class_name",
+        "confidence",
+        "xmin",
+        "ymin",
+        "xmax",
+        "ymax",
+        "latency_ms",
+        "device",
+    ])
+
+    with state.lock:
+        records = list(state.audit_history)
+
+    if not records:
+        # If no defects logged yet, export current system status placeholder line
+        ts = time.time()
+        iso_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+        writer.writerow([
+            iso_time,
+            ts,
+            "system_heartbeat",
+            "none",
+            0,
+            "no_defects_logged",
+            0.0,
+            0,
+            0,
+            0,
+            0,
+            round(state.metrics.get("inference_ms", 0.0), 2),
+            detector.device_name if detector else "unknown",
+        ])
+    else:
+        for r in records:
+            box = r.get("box", [0, 0, 0, 0])
+            writer.writerow([
+                r.get("timestamp", ""),
+                r.get("unix_time", 0.0),
+                r.get("source_type", ""),
+                r.get("filename", ""),
+                r.get("defect_index", 1),
+                r.get("class_name", ""),
+                r.get("confidence", 0.0),
+                box[0] if len(box) > 0 else 0,
+                box[1] if len(box) > 1 else 0,
+                box[2] if len(box) > 2 else 0,
+                box[3] if len(box) > 3 else 0,
+                r.get("latency_ms", 0.0),
+                r.get("device", ""),
+            ])
+
+    csv_content = output.getvalue()
+    filename = f"industrial_defect_audit_{int(time.time())}.csv"
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/samples")

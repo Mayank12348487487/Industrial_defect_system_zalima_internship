@@ -106,3 +106,51 @@ def test_predict_and_annotate(detector):
     assert isinstance(metrics, dict)
     assert "total_ms" in metrics
 
+
+def test_set_and_get_threshold(detector):
+    # Test setting by class name
+    detector.set_threshold("crazing", 0.45)
+    assert detector.get_threshold("crazing") == 0.45
+    assert detector.get_threshold(0) == 0.45
+
+    # Test setting by class ID
+    detector.set_threshold(5, 0.35)
+    assert detector.get_threshold("scratches") == 0.35
+    assert detector.get_threshold(5) == 0.35
+
+    # Test updating multiple thresholds
+    updated = detector.update_thresholds({"inclusion": 0.55, "patches": 0.60})
+    assert updated["inclusion"] == 0.55
+    assert updated["patches"] == 0.60
+
+    # Test resetting to baseline
+    reset_dict = detector.reset_thresholds()
+    assert reset_dict["crazing"] == OPTIMIZED_CONFIDENCE_THRESHOLDS[0]
+    assert reset_dict["scratches"] == OPTIMIZED_CONFIDENCE_THRESHOLDS[5]
+
+
+def test_invalid_threshold_raises(detector):
+    with pytest.raises(ValueError):
+        detector.set_threshold("crazing", 1.5)
+
+    with pytest.raises(ValueError):
+        detector.set_threshold("crazing", -0.1)
+
+    with pytest.raises(ValueError):
+        detector.set_threshold("non_existent_class", 0.5)
+
+    with pytest.raises(ValueError):
+        detector.set_threshold(99, 0.5)
+
+
+def test_batch_predict(detector):
+    img1 = np.zeros((640, 640, 3), dtype=np.uint8)
+    img2 = np.ones((640, 640, 3), dtype=np.uint8) * 100
+    results = detector.batch_predict([img1, img2])
+    assert len(results) == 2
+    for dets, mets in results:
+        assert isinstance(dets, list)
+        assert isinstance(mets, dict)
+        assert "total_ms" in mets
+
+

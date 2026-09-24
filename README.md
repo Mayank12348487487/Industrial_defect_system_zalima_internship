@@ -127,8 +127,14 @@ Evaluated on the NEU Metal Surface Defects validation split:
 - `GET /api/status` - Returns JSON representation of system health, camera uptime, and latencies.
 - `GET /api/classes` - Returns metadata for all detectable defect classes including labels, colors, and thresholds.
 - `GET /api/detections` - Returns latest frame detections and inference latency.
+- `GET /api/samples` - Returns curated sample defect images for 1-click inspection testing.
+- `GET /api/config/thresholds` - Returns active per-class confidence thresholds and baseline defaults.
+- `POST /api/config/thresholds` - Dynamically updates confidence thresholds (per-class or global) without server restart.
+- `POST /api/config/thresholds/reset` - Resets confidence thresholds back to validation-optimized F1 baselines.
 - `GET /api/export_report` - Generates a structured system telemetry and defect summary report for quality audits.
+- `GET /api/export_audit_csv` - Generates downloadable RFC 4180 CSV inspection audit log for MES/ERP integration.
 - `POST /api/detect` - Direct single-image REST inference returning defect coordinates, classes, confidence scores, and latency.
+- `POST /api/detect/batch` - Multi-image batch inference returning per-image detections, class distribution, and batch defect rate metrics.
 - `POST /api/detect/visualize` - Single-image REST inference returning the annotated image directly with visual bounding box overlay.
 - `POST /api/set_source` - Form payload `source` switching the active stream feed (`webcam`, `directory`, or file path).
 - `POST /api/upload` - Multipart file upload (`file`) saving media to `data/uploads/` and dynamically switching the feed to it.

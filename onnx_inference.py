@@ -115,15 +115,70 @@ class ONNXDetector:
         self.input_width = int(self.input_shape[2])
         self.input_height = int(self.input_shape[3])
 
-    def get_threshold(self, class_id: int) -> float:
+    def get_threshold(self, class_identifier: Union[int, str]) -> float:
         """
-        Returns the effective confidence threshold for a given class ID.
+        Returns the effective confidence threshold for a given class ID or class name.
         """
+        if isinstance(class_identifier, str):
+            if class_identifier in self.classes:
+                class_id = self.classes.index(class_identifier)
+            else:
+                return 0.25
+        else:
+            class_id = int(class_identifier)
+
         if isinstance(self.conf_threshold, dict):
-            return self.conf_threshold.get(class_id, 0.25)
+            if class_id in self.conf_threshold:
+                return float(self.conf_threshold[class_id])
+            if isinstance(class_identifier, str) and class_identifier in self.conf_threshold:
+                return float(self.conf_threshold[class_identifier])
+            return 0.25
         elif isinstance(self.conf_threshold, (int, float)):
             return float(self.conf_threshold)
         return 0.25
+
+    def set_threshold(self, class_identifier: Union[int, str], threshold: float) -> float:
+        """
+        Updates the confidence threshold for a specific class ID or class name.
+        """
+        if not (0.01 <= threshold <= 0.99):
+            raise ValueError(f"Threshold must be between 0.01 and 0.99, got {threshold}")
+
+        if not isinstance(self.conf_threshold, dict):
+            self.conf_threshold = {i: float(self.conf_threshold) for i in range(len(self.classes))}
+
+        if isinstance(class_identifier, str):
+            if class_identifier not in self.classes:
+                raise ValueError(f"Unknown defect class '{class_identifier}'. Valid classes: {self.classes}")
+            class_id = self.classes.index(class_identifier)
+        else:
+            class_id = int(class_identifier)
+            if class_id < 0 or class_id >= len(self.classes):
+                raise ValueError(f"Invalid class_id {class_id}. Must be between 0 and {len(self.classes)-1}")
+
+        self.conf_threshold[class_id] = float(threshold)
+        return float(threshold)
+
+    def update_thresholds(self, thresholds: Dict[Union[int, str], float]) -> Dict[str, float]:
+        """
+        Batch updates multiple class thresholds.
+        """
+        for k, v in thresholds.items():
+            self.set_threshold(k, v)
+        return self.get_thresholds_dict()
+
+    def reset_thresholds(self) -> Dict[str, float]:
+        """
+        Resets confidence thresholds back to validation-optimized baselines.
+        """
+        self.conf_threshold = dict(OPTIMIZED_CONFIDENCE_THRESHOLDS)
+        return self.get_thresholds_dict()
+
+    def get_thresholds_dict(self) -> Dict[str, float]:
+        """
+        Returns a mapping of class names to their current confidence threshold.
+        """
+        return {name: self.get_threshold(i) for i, name in enumerate(self.classes)}
 
     def get_class_metadata(self) -> List[Dict[str, Any]]:
         """
@@ -141,6 +196,18 @@ class ONNXDetector:
                 "color_hex": hex_color,
             })
         return metadata
+
+    def batch_predict(
+        self, images: List[np.ndarray]
+    ) -> List[Tuple[List[Dict[str, Any]], Dict[str, float]]]:
+        """
+        Runs prediction sequentially over a list of images.
+        """
+        results = []
+        for img in images:
+            detections, metrics = self.predict(img)
+            results.append((detections, metrics))
+        return results
 
     def preprocess(self, img: np.ndarray) -> np.ndarray:
         """
